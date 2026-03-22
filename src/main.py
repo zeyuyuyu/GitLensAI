@@ -1,29 +1,25 @@
 import os
 import openai
-import json
 
-openai.api_key = os.environ.get('OPENAI_API_KEY')
+openai.api_key = os.environ['OPENAI_API_KEY']
 
-def advanced_prompt_engineering(prompt, max_tokens=2048, temperature=0.7, top_p=0.9, frequency_penalty=0.0, presence_penalty=0.0):
-    """Generates text using the OpenAI GPT-3 language model with advanced prompt engineering."""
+def generate_code(prompt):
     response = openai.Completion.create(
-        engine="text-davinci-003",
+        engine="text-davinci-002",
         prompt=prompt,
-        max_tokens=max_tokens,
+        max_tokens=2048,
         n=1,
         stop=None,
-        temperature=temperature,
-        top_p=top_p,
-        frequency_penalty=frequency_penalty,
-        presence_penalty=presence_penalty
+        temperature=0.7,
     )
 
     return response.choices[0].text.strip()
 
 def main():
-    prompt = "Provide a detailed and engaging product description for a new AI-powered writing assistant."
-    result = advanced_prompt_engineering(prompt)
-    print(result)
+    while True:
+        user_prompt = input("Enter a code generation prompt: ")
+        generated_code = generate_code(user_prompt)
+        print("Generated code:\n", generated_code)
 
 if __name__ == "__main__":
     main()

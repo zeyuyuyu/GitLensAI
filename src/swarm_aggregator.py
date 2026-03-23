@@ -1,64 +1,33 @@
-import os
-import sys
-import time
-import random
-import multiprocessing as mp
-from typing import List, Tuple, Dict
+import numpy as np
+from typing import List, Tuple
 
 class SwarmAggregator:
-    def __init__(self, num_nodes: int, node_data_fn: callable, aggregation_fn: callable):
-        self.num_nodes = num_nodes
-        self.node_data_fn = node_data_fn
-        self.aggregation_fn = aggregation_fn
-        self.nodes = [SwarmNode(i, self.node_data_fn) for i in range(num_nodes)]
-        self.manager = mp.Manager()
-        self.result_queue = self.manager.Queue()
+    def __init__(self, swarm_size: int, dim: int):
+        self.swarm_size = swarm_size
+        self.dim = dim
+        self.positions = np.random.rand(swarm_size, dim)
+        self.velocities = np.zeros((swarm_size, dim))
+        self.best_positions = np.copy(self.positions)
+        self.best_fitness = np.zeros(swarm_size)
+        self.global_best_position = np.copy(self.positions[0])
+        self.global_best_fitness = self.best_fitness[0]
 
-    def run(self):
-        processes = []
-        for node in self.nodes:
-            p = mp.Process(target=node.run, args=(self.result_queue,))
-            p.start()
-            processes.append(p)
+    def update_position(self, fitness_function) -> None:
+        c1, c2 = 2, 2
+        w = 0.5
+        for i in range(self.swarm_size):
+            r1, r2 = np.random.rand(2)
+            self.velocities[i] = w * self.velocities[i] + c1 * r1 * (self.best_positions[i] - self.positions[i]) + c2 * r2 * (self.global_best_position - self.positions[i])
+            self.positions[i] += self.velocities[i]
+            fitness = fitness_function(self.positions[i])
+            if fitness < self.best_fitness[i]:
+                self.best_positions[i] = self.positions[i]
+                self.best_fitness[i] = fitness
+            if fitness < self.global_best_fitness:
+                self.global_best_position = self.positions[i]
+                self.global_best_fitness = fitness
 
-        while True:
-            try:
-                node_data = self.result_queue.get(timeout=1)
-                self.aggregation_fn(node_data)
-            except queue.Empty:
-                if not any(p.is_alive() for p in processes):
-                    break
-
-        for p in processes:
-            p.join()
-
-        return self.aggregation_fn.get_result()
-
-class SwarmNode:
-    def __init__(self, node_id: int, node_data_fn: callable):
-        self.node_id = node_id
-        self.node_data_fn = node_data_fn
-
-    def run(self, result_queue: mp.Queue):
-        data = self.node_data_fn()
-        result_queue.put(data)
-
-class AverageAggregator:
-    def __init__(self):
-        self.total = 0
-        self.count = 0
-
-    def __call__(self, data: Any):
-        self.total += data
-        self.count += 1
-
-    def get_result(self):
-        return self.total / self.count
-
-if __name__ == '__main__':
-    def generate_node_data() -> float:
-        return random.uniform(0, 100)
-
-    aggregator = SwarmAggregator(10, generate_node_data, AverageAggregator())
-    result = aggregator.run()
-    print(f'Final result: {result}')
+    def optimize(self, fitness_function, max_iterations: int) -> Tuple[np.ndarray, float]:
+        for _ in range(max_iterations):
+            self.update_position(fitness_function)
+        return self.global_best_position, self.global_best_fitness

@@ -1,30 +1,25 @@
-import os
 import openai
-import json
+import os
 
-openai.api_key = os.environ.get('OPENAI_API_KEY')
+class GitLensAI:
+    def __init__(self):
+        self.openai_api_key = os.environ.get('OPENAI_API_KEY')
+        openai.api_key = self.openai_api_key
 
-def generate_code_insights(code_text):
-    """Generate AI-powered insights for the given code text."""
-    prompt = f"Provide detailed analysis and insights for the following code:\n\n{code_text}\n\nInclude the following in your response:\n- High-level overview of the code's purpose and functionality\n- Identification of any potential issues, bugs, or areas for improvement\n- Suggestions for optimizations or refactoring to improve performance, readability, and maintainability\n- Explanation of any complex or noteworthy aspects of the code"
-    
-    response = openai.Completion.create(
-        engine="text-davinci-002",
-        prompt=prompt,
-        max_tokens=2048,
-        n=1,
-        stop=None,
-        temperature=0.7,
-    )
-    
-    return response.choices[0].text.strip()
+    def complete_code(self, prompt):
+        """Use OpenAI's GPT-3 to autocomplete code based on a given prompt."""
+        response = openai.Completion.create(
+            engine="code-davinci-002",
+            prompt=prompt,
+            max_tokens=1024,
+            n=1,
+            stop=None,
+            temperature=0.7,
+        )
+        return response.choices[0].text.strip()
 
-def main():
-    with open('src/main.py', 'r') as f:
-        code_text = f.read()
-    
-    insights = generate_code_insights(code_text)
-    print(insights)
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    gitlens_ai = GitLensAI()
+    prompt = "Define a function that takes two numbers and returns their sum:"
+    completed_code = gitlens_ai.complete_code(prompt)
+    print(completed_code)

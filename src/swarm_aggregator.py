@@ -1,80 +1,64 @@
-import asyncio
-from typing import List, Dict, Any
-import aiohttp
-import backoff
-from datetime import datetime
+import os
+import sys
+import time
+import random
+import multiprocessing as mp
+from typing import List, Tuple, Dict
 
 class SwarmAggregator:
-    def __init__(self, nodes: List[str], timeout: int = 30):
-        self.nodes = nodes
-        self.timeout = timeout
-        self.session = None
+    def __init__(self, num_nodes: int, node_data_fn: callable, aggregation_fn: callable):
+        self.num_nodes = num_nodes
+        self.node_data_fn = node_data_fn
+        self.aggregation_fn = aggregation_fn
+        self.nodes = [SwarmNode(i, self.node_data_fn) for i in range(num_nodes)]
+        self.manager = mp.Manager()
+        self.result_queue = self.manager.Queue()
 
-    async def __aenter__(self):
-        self.session = aiohttp.ClientSession()
-        return self
+    def run(self):
+        processes = []
+        for node in self.nodes:
+            p = mp.Process(target=node.run, args=(self.result_queue,))
+            p.start()
+            processes.append(p)
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        if self.session:
-            await self.session.close()
+        while True:
+            try:
+                node_data = self.result_queue.get(timeout=1)
+                self.aggregation_fn(node_data)
+            except queue.Empty:
+                if not any(p.is_alive() for p in processes):
+                    break
 
-    @backoff.on_exception(backoff.expo,
-                         (aiohttp.ClientError, asyncio.TimeoutError),
-                         max_tries=5)
-    async def _fetch_node_data(self, node: str) -> Dict[str, Any]:
-        async with self.session.get(
-            f'{node}/data',
-            timeout=self.timeout
-        ) as response:
-            response.raise_for_status()
-            return await response.json()
+        for p in processes:
+            p.join()
 
-    async def aggregate_data(self) -> Dict[str, Any]:
-        tasks = [self._fetch_node_data(node) for node in self.nodes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        return self.aggregation_fn.get_result()
 
-        aggregated_data = {
-            'timestamp': datetime.utcnow().isoformat(),
-            'node_count': len(self.nodes),
-            'successful_nodes': 0,
-            'failed_nodes': 0,
-            'data': []
-        }
+class SwarmNode:
+    def __init__(self, node_id: int, node_data_fn: callable):
+        self.node_id = node_id
+        self.node_data_fn = node_data_fn
 
-        for result in results:
-            if isinstance(result, Exception):
-                aggregated_data['failed_nodes'] += 1
-                continue
-            aggregated_data['successful_nodes'] += 1
-            aggregated_data['data'].append(result)
+    def run(self, result_queue: mp.Queue):
+        data = self.node_data_fn()
+        result_queue.put(data)
 
-        return aggregated_data
+class AverageAggregator:
+    def __init__(self):
+        self.total = 0
+        self.count = 0
 
-    @staticmethod
-    def merge_results(data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        merged = {}
-        for entry in data:
-            for key, value in entry.items():
-                if key not in merged:
-                    merged[key] = []
-                if isinstance(value, (int, float)):
-                    merged[key].append(value)
+    def __call__(self, data: Any):
+        self.total += data
+        self.count += 1
 
-        # Calculate statistics for numeric values
-        stats = {}
-        for key, values in merged.items():
-            if values:
-                stats[key] = {
-                    'mean': sum(values) / len(values),
-                    'min': min(values),
-                    'max': max(values),
-                    'count': len(values)
-                }
+    def get_result(self):
+        return self.total / self.count
 
-        return stats
+if __name__ == '__main__':
+    def generate_node_data() -> float:
+        return random.uniform(0, 100)
 
-    async def get_aggregated_stats(self) -> Dict[str, Any]:
-        raw_data = await self.aggregate_data()
-        if raw_data['data']:
-            raw_data['statistics'] = self.merge_results(raw_data['data'])
-        return raw_data
+    aggregator = SwarmAggregator(10, generate_node_data, AverageAggregator())
+    result = aggregator.run()
+    print(f'Final result: {result}')

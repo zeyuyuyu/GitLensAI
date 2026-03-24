@@ -1,47 +1,27 @@
 import numpy as np
 
 class SwarmAggregator:
-    def __init__(self, num_agents, data_dim):
+    def __init__(self, num_agents, dim):
         self.num_agents = num_agents
-        self.data_dim = data_dim
-        self.agents = [Agent(data_dim) for _ in range(num_agents)]
-        self.global_best = np.zeros(data_dim)
-        self.global_best_score = float('-inf')
+        self.dim = dim
+        self.positions = np.zeros((num_agents, dim))
+        self.velocities = np.zeros((num_agents, dim))
+        self.accelerations = np.zeros((num_agents, dim))
+        self.social_weights = np.ones((num_agents, num_agents)) / (num_agents - 1)
+        self.inertia_weight = 0.5
+        self.cognitive_weight = 1.0
+        self.social_weight = 1.0
 
-    def aggregate(self, data_samples):
-        for agent in self.agents:
-            agent.update(data_samples)
-            score = agent.evaluate()
-            if score > self.global_best_score:
-                self.global_best = agent.position.copy()
-                self.global_best_score = score
-        return self.global_best
+    def update(self, local_bests, global_best):
+        for i in range(self.num_agents):
+            cognitive_component = self.cognitive_weight * (local_bests[i] - self.positions[i])
+            social_component = self.social_weight * np.sum(self.social_weights[i] * (global_best - self.positions[i]))
+            self.accelerations[i] = self.inertia_weight * self.accelerations[i] + cognitive_component + social_component
+            self.velocities[i] += self.accelerations[i]
+            self.positions[i] += self.velocities[i]
 
-class Agent:
-    def __init__(self, data_dim):
-        self.position = np.random.uniform(-1, 1, size=data_dim)
-        self.velocity = np.zeros(data_dim)
-        self.personal_best = self.position.copy()
-        self.personal_best_score = float('-inf')
+    def get_positions(self):
+        return self.positions
 
-    def update(self, data_samples):
-        c1 = 2
-        c2 = 2
-        w = 0.5
-
-        for sample in data_samples:
-            score = self.evaluate_sample(sample)
-            if score > self.personal_best_score:
-                self.personal_best = sample.copy()
-                self.personal_best_score = score
-
-            self.velocity = w * self.velocity + c1 * np.random.uniform(0, 1, size=self.data_dim) * (self.personal_best - self.position) + \
-                           c2 * np.random.uniform(0, 1, size=self.data_dim) * (global_best - self.position)
-            self.position += self.velocity
-
-    def evaluate(self):
-        return self.personal_best_score
-
-    def evaluate_sample(self, sample):
-        # Implement your own evaluation function here
-        return np.linalg.norm(sample)
+    def get_global_best(self):
+        return np.max(self.positions, axis=0)

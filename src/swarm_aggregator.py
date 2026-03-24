@@ -1,33 +1,47 @@
 import numpy as np
-from typing import List, Tuple
 
 class SwarmAggregator:
-    def __init__(self, swarm_size: int, dim: int):
-        self.swarm_size = swarm_size
-        self.dim = dim
-        self.positions = np.random.rand(swarm_size, dim)
-        self.velocities = np.zeros((swarm_size, dim))
-        self.best_positions = np.copy(self.positions)
-        self.best_fitness = np.zeros(swarm_size)
-        self.global_best_position = np.copy(self.positions[0])
-        self.global_best_fitness = self.best_fitness[0]
+    def __init__(self, num_agents, data_dim):
+        self.num_agents = num_agents
+        self.data_dim = data_dim
+        self.agents = [Agent(data_dim) for _ in range(num_agents)]
+        self.global_best = np.zeros(data_dim)
+        self.global_best_score = float('-inf')
 
-    def update_position(self, fitness_function) -> None:
-        c1, c2 = 2, 2
+    def aggregate(self, data_samples):
+        for agent in self.agents:
+            agent.update(data_samples)
+            score = agent.evaluate()
+            if score > self.global_best_score:
+                self.global_best = agent.position.copy()
+                self.global_best_score = score
+        return self.global_best
+
+class Agent:
+    def __init__(self, data_dim):
+        self.position = np.random.uniform(-1, 1, size=data_dim)
+        self.velocity = np.zeros(data_dim)
+        self.personal_best = self.position.copy()
+        self.personal_best_score = float('-inf')
+
+    def update(self, data_samples):
+        c1 = 2
+        c2 = 2
         w = 0.5
-        for i in range(self.swarm_size):
-            r1, r2 = np.random.rand(2)
-            self.velocities[i] = w * self.velocities[i] + c1 * r1 * (self.best_positions[i] - self.positions[i]) + c2 * r2 * (self.global_best_position - self.positions[i])
-            self.positions[i] += self.velocities[i]
-            fitness = fitness_function(self.positions[i])
-            if fitness < self.best_fitness[i]:
-                self.best_positions[i] = self.positions[i]
-                self.best_fitness[i] = fitness
-            if fitness < self.global_best_fitness:
-                self.global_best_position = self.positions[i]
-                self.global_best_fitness = fitness
 
-    def optimize(self, fitness_function, max_iterations: int) -> Tuple[np.ndarray, float]:
-        for _ in range(max_iterations):
-            self.update_position(fitness_function)
-        return self.global_best_position, self.global_best_fitness
+        for sample in data_samples:
+            score = self.evaluate_sample(sample)
+            if score > self.personal_best_score:
+                self.personal_best = sample.copy()
+                self.personal_best_score = score
+
+            self.velocity = w * self.velocity + c1 * np.random.uniform(0, 1, size=self.data_dim) * (self.personal_best - self.position) + \
+                           c2 * np.random.uniform(0, 1, size=self.data_dim) * (global_best - self.position)
+            self.position += self.velocity
+
+    def evaluate(self):
+        return self.personal_best_score
+
+    def evaluate_sample(self, sample):
+        # Implement your own evaluation function here
+        return np.linalg.norm(sample)

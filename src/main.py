@@ -1,25 +1,61 @@
-import openai
-import os
+import asyncio
+from pathlib import Path
+from typing import List, Dict
+from tqdm import tqdm
+from src.swarm_aggregator import SwarmAggregator
 
 class GitLensAI:
-    def __init__(self):
-        self.openai_api_key = os.environ.get('OPENAI_API_KEY')
-        openai.api_key = self.openai_api_key
+    def __init__(self, repo_path: str):
+        self.repo_path = Path(repo_path)
+        self.aggregator = SwarmAggregator()
+        self.batch_size = 50
 
-    def complete_code(self, prompt):
-        """Use OpenAI's GPT-3 to autocomplete code based on a given prompt."""
-        response = openai.Completion.create(
-            engine="code-davinci-002",
-            prompt=prompt,
-            max_tokens=1024,
-            n=1,
-            stop=None,
-            temperature=0.7,
-        )
-        return response.choices[0].text.strip()
+    async def process_file(self, file_path: Path) -> Dict:
+        """Process a single file and return its analysis results"""
+        try:
+            with open(file_path, 'r') as f:
+                content = f.read()
+            return {
+                'path': str(file_path),
+                'analysis': await self.aggregator.analyze(content),
+                'status': 'success'
+            }
+        except Exception as e:
+            return {
+                'path': str(file_path),
+                'error': str(e),
+                'status': 'error'
+            }
 
-if __name__ == "__main__":
-    gitlens_ai = GitLensAI()
-    prompt = "Define a function that takes two numbers and returns their sum:"
-    completed_code = gitlens_ai.complete_code(prompt)
-    print(completed_code)
+    async def process_batch(self, files: List[Path]) -> List[Dict]:
+        """Process a batch of files concurrently"""
+        tasks = [self.process_file(f) for f in files]
+        return await asyncio.gather(*tasks)
+
+    async def analyze_repository(self) -> List[Dict]:
+        """Analyze entire repository with progress tracking"""
+        all_files = list(self.repo_path.rglob('*.py'))
+        results = []
+        
+        with tqdm(total=len(all_files), desc='Analyzing repository') as pbar:
+            for i in range(0, len(all_files), self.batch_size):
+                batch = all_files[i:i + self.batch_size]
+                batch_results = await self.process_batch(batch)
+                results.extend(batch_results)
+                pbar.update(len(batch))
+        
+        return results
+
+def main():
+    repo_path = './'
+    analyzer = GitLensAI(repo_path)
+    
+    results = asyncio.run(analyzer.analyze_repository())
+    
+    # Print summary
+    success = sum(1 for r in results if r['status'] == 'success')
+    errors = sum(1 for r in results if r['status'] == 'error')
+    print(f'\nAnalysis complete:\n{success} files processed successfully\n{errors} errors')
+
+if __name__ == '__main__':
+    main()

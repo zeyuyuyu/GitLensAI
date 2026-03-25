@@ -1,27 +1,31 @@
 import numpy as np
+from collections import deque
 
 class SwarmAggregator:
-    def __init__(self, num_agents, dim):
+    def __init__(self, num_agents, buffer_size=100):
         self.num_agents = num_agents
-        self.dim = dim
-        self.positions = np.zeros((num_agents, dim))
-        self.velocities = np.zeros((num_agents, dim))
-        self.accelerations = np.zeros((num_agents, dim))
-        self.social_weights = np.ones((num_agents, num_agents)) / (num_agents - 1)
-        self.inertia_weight = 0.5
-        self.cognitive_weight = 1.0
-        self.social_weight = 1.0
+        self.buffer_size = buffer_size
+        self.agent_buffers = [deque(maxlen=buffer_size) for _ in range(num_agents)]
+        self.global_buffer = deque(maxlen=buffer_size)
 
-    def update(self, local_bests, global_best):
-        for i in range(self.num_agents):
-            cognitive_component = self.cognitive_weight * (local_bests[i] - self.positions[i])
-            social_component = self.social_weight * np.sum(self.social_weights[i] * (global_best - self.positions[i]))
-            self.accelerations[i] = self.inertia_weight * self.accelerations[i] + cognitive_component + social_component
-            self.velocities[i] += self.accelerations[i]
-            self.positions[i] += self.velocities[i]
+    def add_data(self, agent_id, data):
+        self.agent_buffers[agent_id].append(data)
+        self.global_buffer.append(data)
 
-    def get_positions(self):
-        return self.positions
+    def aggregate(self):
+        agent_means = [np.mean(buf) for buf in self.agent_buffers]
+        global_mean = np.mean(self.global_buffer)
 
-    def get_global_best(self):
-        return np.max(self.positions, axis=0)
+        # Apply swarm intelligence-based weighting
+        weights = self._swarm_weights(agent_means, global_mean)
+        aggregated_data = np.average(self.global_buffer, weights=weights)
+        return aggregated_data
+
+    def _swarm_weights(self, agent_means, global_mean):
+        weights = []
+        for mean in agent_means:
+            if mean > global_mean:
+                weights.append(1 + abs(mean - global_mean) / global_mean)
+            else:
+                weights.append(1 - abs(mean - global_mean) / global_mean)
+        return weights / sum(weights)
